@@ -161,11 +161,11 @@ const BrainVisualization: React.FC<BrainVisualizationProps> = ({
 
     setNodes(newNodes);
     setConnections(newConnections);
-  }, [width, height]);
+  }, [width, height, showLabels]);
 
   useEffect(() => {
     generateBrainNetwork();
-  }, [width, height, generateBrainNetwork]);
+  }, [width, height, showLabels, generateBrainNetwork]);
 
   useEffect(() => {
     if (!svgRef.current || nodes.length === 0) return;
@@ -316,7 +316,7 @@ const BrainVisualization: React.FC<BrainVisualizationProps> = ({
     
     setTimeout(pulse, 3000);
 
-  }, [nodes, connections, interactive, onNodeClick]);
+  }, [nodes, connections, interactive, onNodeClick, showLabels]);
 
   return (
     <div className="brain-visualization relative">

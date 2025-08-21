@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, TrendingUp, Database, Radar, ArrowLeft, ChevronUp } from 'lucide-react';
+import { Search, ArrowLeft, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import BrainVisualization from './BrainVisualization';
 import { BrainNode } from '../types';
@@ -40,6 +40,7 @@ const HomePage: React.FC = () => {
       setSearchQuery(searchParam);
       searchWithOllama(searchParam);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   // Close dropdown when clicking outside

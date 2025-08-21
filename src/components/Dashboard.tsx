@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, TrendingUp, DollarSign, Users, MapPin } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import BrainVisualization from './BrainVisualization';
 import { Startup, TrendData, BrainNode } from '../types';
@@ -8,7 +8,7 @@ import { Startup, TrendData, BrainNode } from '../types';
 const Dashboard: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [selectedStartup, setSelectedStartup] = useState<Startup | null>(null);
+  const [, setSelectedStartup] = useState<Startup | null>(null);
   const [trendData, setTrendData] = useState<TrendData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
