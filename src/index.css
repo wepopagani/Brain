@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-brain-dark text-white;
+  }
+}
+
+@layer components {
+  .glass-effect {
+    @apply bg-white bg-opacity-5 backdrop-blur-lg border border-white border-opacity-10;
+  }
+  
+  .brain-gradient {
+    background: linear-gradient(135deg, #00b4d8 0%, #90e0ef 100%);
+  }
+  
+  .neuron-node {
+    @apply rounded-full bg-brain-blue shadow-lg cursor-pointer;
+    transition: all 0.3s ease;
+  }
+  
+  .neuron-node:hover {
+    @apply transform scale-110;
+    box-shadow: 0 0 20px rgba(0, 180, 216, 0.8);
+  }
+  
+  .connection-line {
+    stroke: #00b4d8;
+    stroke-width: 1;
+    opacity: 0.6;
+    transition: all 0.3s ease;
+  }
+  
+  .connection-line:hover {
+    stroke-width: 2;
+    opacity: 1;
+  }
+} 

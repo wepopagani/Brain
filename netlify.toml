@@ -1,0 +1,20 @@
+[build]
+  publish = "build"
+  command = "npm run build"
+
+# Redirect all routes to index.html for React Router
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Environment variables hints for Netlify
+[build.environment]
+  NODE_VERSION = "18"
+  NPM_VERSION = "8"
+
+# API proxy for development (optional)
+# [[redirects]]
+#   from = "/api/*"
+#   to = "https://your-backend-url.herokuapp.com/api/:splat"
+#   status = 200
