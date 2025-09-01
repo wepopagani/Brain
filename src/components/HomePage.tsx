@@ -11,6 +11,7 @@ const HomePage: React.FC = () => {
   const [showResults, setShowResults] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [knowledgeGraph, setKnowledgeGraph] = useState<any>(null);
+  const [csvStartups, setCsvStartups] = useState<any[]>([]);
   const [zoomTarget, setZoomTarget] = useState<{x: number, y: number} | null>(null);
   const [showSectorDropdown, setShowSectorDropdown] = useState(false);
   const [searchParams] = useSearchParams();
@@ -70,6 +71,21 @@ const HomePage: React.FC = () => {
         const data = await response.json();
         setKnowledgeGraph(data.knowledge_graph);
         
+        // Cerca anche startup nel CSV locale per settori specifici
+        if (searchQuery.toLowerCase().includes('energy') || searchQuery.toLowerCase().includes('energia')) {
+          try {
+            const csvResponse = await fetch('http://localhost:8001/api/startups/sector/Energy');
+            if (csvResponse.ok) {
+              const csvData = await csvResponse.json();
+              setCsvStartups(csvData.startups || []);
+            }
+          } catch (error) {
+            console.log('CSV search not available');
+          }
+        } else {
+          setCsvStartups([]);
+        }
+        
         // Set random zoom target for visual effect
         const randomX = Math.random() * width * 0.3 + width * 0.2;
         const randomY = Math.random() * height * 0.3 + height * 0.2;
@@ -96,6 +112,7 @@ const HomePage: React.FC = () => {
   const handleBack = () => {
     setShowResults(false);
     setKnowledgeGraph(null);
+    setCsvStartups([]);
     setZoomTarget(null);
     setSearchQuery('');
   };
@@ -362,6 +379,50 @@ const HomePage: React.FC = () => {
                   ))}
                 </div>
               </motion.div>
+
+              {/* CSV Startups (Energy sector) */}
+              {csvStartups && csvStartups.length > 0 && (
+                <motion.div
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 1.2 }}
+                  className="mb-8"
+                >
+                  <h4 className="text-lg font-semibold mb-4 text-brain-cyan">
+                    🚀 Startup Energy dal CSV ({csvStartups.length})
+                  </h4>
+                  <div className="space-y-4">
+                    {csvStartups.slice(0, 6).map((startup: any, idx: number) => (
+                      <div key={idx} className="bg-gray-800 bg-opacity-30 rounded-lg p-4 border-l-4 border-brain-cyan">
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h5 className="text-white text-base font-semibold mb-1">{startup.name}</h5>
+                              <div className="flex items-center gap-3 text-xs text-gray-400">
+                                <span className="px-2 py-1 bg-brain-blue bg-opacity-20 rounded-full">{startup.sector}</span>
+                                <span>{startup.location}</span>
+                                <span className="font-medium text-brain-cyan">{startup.funding_formatted}</span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {startup.description_short && (
+                            <p className="text-gray-300 text-sm leading-relaxed">
+                              {startup.description_short}
+                            </p>
+                          )}
+                          
+                          <div className="flex items-center gap-4 text-xs text-gray-500">
+                            <span>Founded: {startup.year}</span>
+                            <span>Employees: {startup.employees}</span>
+                            <span>Status: {startup.status}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
 
               {/* Additional Context */}
               <motion.div

@@ -7,6 +7,7 @@ import re
 from typing import List, Dict, Any, Optional
 import asyncio
 from data_processor import startup_processor
+import pandas as pd
 
 app = FastAPI()
 
@@ -348,6 +349,264 @@ async def search_startups(query: SearchQuery):
                 "startups": []
             }
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/startups/sector/{sector_name}")
+async def get_startups_by_sector(sector_name: str, limit: Optional[int] = 100):
+    """Ottieni tutte le startup di un settore specifico dal CSV (senza duplicati)"""
+    try:
+        import pandas as pd
+        import os
+        
+        # Leggi direttamente il CSV
+        csv_path = os.path.join(os.path.dirname(__file__), "data", "startup_data.csv")
+        if not os.path.exists(csv_path):
+            return {"status": "error", "message": "CSV non trovato"}
+        
+        # Leggi il CSV saltando le prime righe di header
+        df = pd.read_csv(csv_path, skiprows=2)
+        
+        # Cerca la colonna Markets (settore)
+        markets_col = None
+        for col in df.columns:
+            if 'markets' in col.lower():
+                markets_col = col
+                break
+        
+        if not markets_col:
+            return {"status": "error", "message": "Colonna Markets non trovata"}
+        
+        # Filtra per settore Energy (case-insensitive)
+        sector_startups = df[
+            df[markets_col].str.lower().str.contains('energy', na=False)
+        ]
+        
+        if len(sector_startups) == 0:
+            return {
+                "status": "no_matches",
+                "sector": sector_name,
+                "message": f"No startups found in sector: {sector_name}",
+                "startups": []
+            }
+        
+        # Deduplica per Startup ID se disponibile, altrimenti per nome
+        id_col = None
+        for col in df.columns:
+            if 'startup id' in col.lower():
+                id_col = col
+                break
+        
+        if id_col:
+            sector_startups = sector_startups.drop_duplicates(subset=[id_col], keep='first')
+            print(f"DEBUG: Deduplicato per {id_col}, rimanenti: {len(sector_startups)}")
+        else:
+            # Fallback: deduplica per nome
+            name_col = None
+            for col in df.columns:
+                if 'item name' in col.lower():
+                    name_col = col
+                    break
+            
+            if name_col:
+                sector_startups = sector_startups.drop_duplicates(subset=[name_col], keep='first')
+                print(f"DEBUG: Deduplicato per {name_col}, rimanenti: {len(sector_startups)}")
+        
+        # Converti in formato startup
+        startups = []
+        for idx, row in sector_startups.head(limit).iterrows():
+            # Estrai i campi principali
+            name = str(row.get('Item Name', 'Unknown')) if 'Item Name' in row else 'Unknown'
+            location = str(row.get('Location', 'Europe')) if 'Location' in row else 'Europe'
+            description = str(row.get('Description', 'Startup innovativa')) if 'Description' in row else 'Startup innovativa'
+            
+            # Parsing finanziamenti
+            funding = 0.0
+            if 'Total Funding' in row and pd.notna(row['Total Funding']):
+                try:
+                    funding = float(str(row['Total Funding']).replace('€', '').replace(',', ''))
+                except:
+                    funding = 0.0
+            
+            startup = {
+                "id": str(row.get(id_col, f"startup_{idx}")) if id_col else f"startup_{idx}",
+                "name": name,
+                "sector": sector_name,
+                "funding": funding,
+                "location": location,
+                "description": description,
+                "year": 2023,  # Default
+                "employees": 10,  # Default
+                "status": "Active",
+                "pipeline": "Unknown",
+                "founders": "Unknown",
+                "social_links": {},
+                "funding_formatted": f"€{funding:,.0f}" if funding > 0 else "€0",
+                "description_short": description[:200] + ('...' if len(description) > 200 else ''),
+                "has_website": False,
+                "has_linkedin": False
+            }
+            startups.append(startup)
+        
+        return {
+            "status": "success",
+            "sector": sector_name,
+            "count": len(startups),
+            "total_in_sector": len(sector_startups),
+            "startups": startups
+        }
+        
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/sectors/list")
+async def get_all_sectors():
+    """Mostra tutti i settori disponibili nel CSV con conteggi"""
+    try:
+        if startup_processor.df is not None or startup_processor.load_csv():
+            startup_processor.normalize_data()
+            
+            # Ottieni settori unici e conta le startup per settore
+            sector_counts = startup_processor.df['settore'].value_counts()
+            
+            sectors = []
+            for sector, count in sector_counts.items():
+                if pd.notna(sector) and str(sector).strip():
+                    sectors.append({
+                        "name": str(sector).strip(),
+                        "count": int(count)
+                    })
+            
+            # Ordina per numero di startup (decrescente)
+            sectors.sort(key=lambda x: x['count'], reverse=True)
+            
+            return {
+                "status": "success",
+                "total_sectors": len(sectors),
+                "sectors": sectors
+            }
+        else:
+            return {"status": "no_data", "sectors": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/startups/sector-direct/{sector_name}")
+async def get_startups_by_sector_direct(sector_name: str, limit: Optional[int] = 100):
+    """Endpoint diretto per ottenere startup Energy dal CSV (bypass data_processor)"""
+    try:
+        import pandas as pd
+        import os
+        
+        # Leggi direttamente il CSV
+        csv_path = os.path.join(os.path.dirname(__file__), "data", "startup_data.csv")
+        if not os.path.exists(csv_path):
+            return {"status": "error", "message": "CSV non trovato"}
+        
+        # Leggi il CSV saltando le prime righe di header
+        df = pd.read_csv(csv_path, skiprows=2)
+        print(f"DEBUG: CSV caricato con {len(df)} righe e colonne: {list(df.columns)}")
+        
+        # Cerca la colonna Markets (settore)
+        markets_col = None
+        for col in df.columns:
+            if 'markets' in col.lower():
+                markets_col = col
+                break
+        
+        if not markets_col:
+            return {"status": "error", "message": f"Colonna Markets non trovata. Colonne disponibili: {list(df.columns)}"}
+        
+        print(f"DEBUG: Usando colonna Markets: {markets_col}")
+        
+        # Filtra per settore Energy (case-insensitive)
+        sector_startups = df[
+            df[markets_col].str.lower().str.contains('energy', na=False)
+        ]
+        
+        print(f"DEBUG: Trovate {len(sector_startups)} startup con 'energy' in {markets_col}")
+        
+        if len(sector_startups) == 0:
+            return {
+                "status": "no_matches",
+                "sector": sector_name,
+                "message": f"No startups found in sector: {sector_name}",
+                "startups": []
+            }
+        
+        # Deduplica per Startup ID se disponibile, altrimenti per nome
+        id_col = None
+        for col in df.columns:
+            if 'startup id' in col.lower():
+                id_col = col
+                break
+        
+        if id_col:
+            print(f"DEBUG: Deduplicazione per colonna ID: {id_col}")
+            sector_startups = sector_startups.drop_duplicates(subset=[id_col], keep='first')
+            print(f"DEBUG: Dopo deduplicazione per ID: {len(sector_startups)} startup")
+        else:
+            # Fallback: deduplica per nome
+            name_col = None
+            for col in df.columns:
+                if 'item name' in col.lower():
+                    name_col = col
+                    break
+            
+            if name_col:
+                print(f"DEBUG: Deduplicazione per colonna nome: {name_col}")
+                sector_startups = sector_startups.drop_duplicates(subset=[name_col], keep='first')
+                print(f"DEBUG: Dopo deduplicazione per nome: {len(sector_startups)} startup")
+        
+        # Converti in formato startup
+        startups = []
+        for idx, row in sector_startups.head(limit).iterrows():
+            # Estrai i campi principali
+            name = str(row.get('Item Name', 'Unknown')) if 'Item Name' in row else 'Unknown'
+            location = str(row.get('Location', 'Europe')) if 'Location' in row else 'Europe'
+            description = str(row.get('Description', 'Startup innovativa')) if 'Description' in row else 'Startup innovativa'
+            
+            # Parsing finanziamenti
+            funding = 0.0
+            if 'Total Funding' in row and pd.notna(row['Total Funding']):
+                try:
+                    funding = float(str(row['Total Funding']).replace('€', '').replace(',', ''))
+                except:
+                    funding = 0.0
+            
+            startup = {
+                "id": str(row.get(id_col, f"startup_{idx}")) if id_col else f"startup_{idx}",
+                "name": name,
+                "sector": sector_name,
+                "funding": funding,
+                "location": location,
+                "description": description,
+                "year": 2023,  # Default
+                "employees": 10,  # Default
+                "status": "Active",
+                "pipeline": "Unknown",
+                "founders": "Unknown",
+                "social_links": {},
+                "funding_formatted": f"€{funding:,.0f}" if funding > 0 else "€0",
+                "description_short": description[:200] + ('...' if len(description) > 200 else ''),
+                "has_website": False,
+                "has_linkedin": False
+            }
+            startups.append(startup)
+        
+        return {
+            "status": "success",
+            "sector": sector_name,
+            "count": len(startups),
+            "total_in_sector": len(sector_startups),
+            "startups": startups
+        }
+        
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/data/status")

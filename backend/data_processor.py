@@ -92,67 +92,131 @@ class StartupDataProcessor:
                 self.logger.info(f"Categoria '{category}': {len(columns)} colonne")
     
     def normalize_data(self) -> None:
-        """Normalizza e pulisce i dati del CSV in base alle categorie trovate"""
+        """Normalizza e pulisce i dati del CSV in base alle colonne reali"""
         if self.original_df is None:
             return
         
-        # Mapping diretto basato sulla struttura CSV osservata
-        # I nomi delle colonne sono in realtà i valori della prima startup
-        name_col = self.original_df.columns[1] if len(self.original_df.columns) > 1 else None  # "Mae"
-        location_col = self.original_df.columns[6] if len(self.original_df.columns) > 6 else None  # "Berlin, Germany"
-        markets_col = self.original_df.columns[7] if len(self.original_df.columns) > 7 else None  # "Cultural Experience..."
-        funding_col = self.original_df.columns[52] if len(self.original_df.columns) > 52 else None  # "EUR 100000"
-        description_col = self.original_df.columns[50] if len(self.original_df.columns) > 50 else None  # Descrizione lunga
-        founded_col = self.original_df.columns[48] if len(self.original_df.columns) > 48 else None  # "Oct '24"
-        employees_col = None  # Non identificato direttamente
+        # Usa i nomi reali delle colonne del CSV
+        self.df = self.original_df.copy()
         
-        # Log delle colonne identificate
-        self.logger.info(f"Colonne identificate: nome={name_col}, location={location_col}, markets={markets_col}, funding={funding_col}")
+        # Rinomina le colonne per facilitare l'uso
+        column_mapping = {
+            'Startup ID': 'startup_id',
+            'Item Name': 'nome',
+            'Location': 'location', 
+            'Markets': 'settore',
+            'Description': 'descrizione',
+            'Founded': 'anno',
+            'Number of employees': 'dipendenti',
+            'Total Funding': 'finanziamenti',
+            'Founder 1 Name': 'founder1',
+            'Founder 2 Name': 'founder2',
+            'Website 1': 'website',
+            'Linkedin': 'linkedin',
+            'Status': 'status',
+            'Pipeline': 'pipeline'
+        }
         
-        # Crea DataFrame normalizzato
-        normalized_data = {}
-        
-        # Campi principali
-        normalized_data['nome'] = self._extract_column_data(name_col, [f"Startup_{i}" for i in range(len(self.original_df))])
-        normalized_data['location'] = self._extract_column_data(location_col, "Europe")
-        normalized_data['settore'] = self._extract_markets_data(markets_col)
-        normalized_data['finanziamenti'] = self._extract_funding_data(funding_col)
-        normalized_data['descrizione'] = self._extract_column_data(description_col, "Startup innovativa")
-        normalized_data['anno'] = self._extract_year_data(founded_col)
-        normalized_data['dipendenti'] = self._extract_numeric_data(employees_col, 10)
-        
-        # Aggiungi informazioni sui founder
-        normalized_data['founders'] = self._extract_founders_data()
-        
-        # Aggiungi link social
-        normalized_data['social_links'] = self._extract_social_data()
-        
-        # Aggiungi stato e pipeline
-        normalized_data['status'] = self._extract_column_data(self._find_best_column(['status']), "Active")
-        normalized_data['pipeline'] = self._extract_column_data(self._find_best_column(['pipeline']), "Unknown")
-        
-        # Mantieni anche tutti i dati originali come JSON
-        normalized_data['raw_data'] = self.original_df.to_dict('records')
-        
-        self.df = pd.DataFrame({
-            'nome': normalized_data['nome'],
-            'location': normalized_data['location'],
-            'settore': normalized_data['settore'],
-            'finanziamenti': normalized_data['finanziamenti'],
-            'descrizione': normalized_data['descrizione'],
-            'anno': normalized_data['anno'],
-            'dipendenti': normalized_data['dipendenti'],
-            'status': normalized_data['status'],
-            'pipeline': normalized_data['pipeline'],
-            'founders': normalized_data['founders'],
-            'social_links': normalized_data['social_links']
-        })
+        # Rinomina solo le colonne che esistono
+        for old_name, new_name in column_mapping.items():
+            if old_name in self.df.columns:
+                self.df = self.df.rename(columns={old_name: new_name})
         
         # Pulisci i dati
-        self._clean_funding_data()
-        self._clean_sector_data()
+        self.df = self.df.dropna(subset=['nome'])  # Rimuovi righe senza nome
         
-        self.logger.info(f"Dati normalizzati: {len(self.df)} startup processate")
+        # Normalizza il settore - prendi solo il primo se ce ne sono più
+        if 'settore' in self.df.columns:
+            self.df['settore'] = self.df['settore'].apply(
+                lambda x: str(x).split(',')[0].strip() if pd.notna(x) else 'Technology'
+            )
+        
+        # Normalizza l'anno di fondazione
+        if 'anno' in self.df.columns:
+            self.df['anno'] = self.df['anno'].apply(self._extract_year_from_string)
+        
+        # Normalizza i finanziamenti
+        if 'finanziamenti' in self.df.columns:
+            self.df['finanziamenti'] = self.df['finanziamenti'].apply(self._parse_funding)
+        
+        # Normalizza i dipendenti
+        if 'dipendenti' in self.df.columns:
+            self.df['dipendenti'] = self.df['dipendenti'].apply(self._extract_employees_from_string)
+        
+        # Aggiungi campi mancanti con valori di default
+        if 'status' not in self.df.columns:
+            self.df['status'] = 'Active'
+        if 'pipeline' not in self.df.columns:
+            self.df['pipeline'] = 'Unknown'
+        
+        # Crea campo founders combinato
+        founder_cols = [col for col in self.df.columns if 'founder' in col.lower()]
+        if founder_cols:
+            self.df['founders'] = self.df[founder_cols].apply(
+                lambda row: ', '.join([str(val) for val in row if pd.notna(val) and str(val).strip()]), 
+                axis=1
+            )
+        else:
+            self.df['founders'] = 'Unknown'
+        
+        # Crea campo social_links
+        social_cols = [col for col in self.df.columns if col in ['website', 'linkedin']]
+        if social_cols:
+            self.df['social_links'] = self.df[social_cols].apply(
+                lambda row: {col: str(val) for col, val in row.items() if pd.notna(val) and str(val).strip()}, 
+                axis=1
+            )
+        else:
+            self.df['social_links'] = [{}] * len(self.df)
+        
+        # Deduplicazione: rimuovi startup duplicate basandosi su startup_id
+        if 'startup_id' in self.df.columns:
+            initial_count = len(self.df)
+            self.df = self.df.drop_duplicates(subset=['startup_id'], keep='first')
+            final_count = len(self.df)
+            if initial_count != final_count:
+                self.logger.info(f"Deduplicazione: rimosse {initial_count - final_count} startup duplicate")
+        else:
+            # Fallback: deduplica per nome se startup_id non è disponibile
+            initial_count = len(self.df)
+            self.df = self.df.drop_duplicates(subset=['nome'], keep='first')
+            final_count = len(self.df)
+            if initial_count != final_count:
+                self.logger.info(f"Deduplicazione fallback per nome: rimosse {initial_count - final_count} startup duplicate")
+        
+        self.logger.info(f"Normalizzati {len(self.df)} startup")
+    
+    def _extract_year_from_string(self, value) -> int:
+        """Estrae l'anno da una stringa di data"""
+        if pd.isna(value) or value == '':
+            return 2023
+        
+        str_val = str(value).strip()
+        
+        # Cerca pattern di anno (19xx o 20xx)
+        year_match = re.search(r'\b(19|20)\d{2}\b', str_val)
+        if year_match:
+            return int(year_match.group())
+        
+        # Se non trova anno, ritorna 2023
+        return 2023
+    
+    def _extract_employees_from_string(self, value) -> int:
+        """Estrae il numero di dipendenti da una stringa"""
+        if pd.isna(value) or value == '':
+            return 10
+        
+        str_val = str(value).strip()
+        
+        # Cerca numeri nella stringa
+        numbers = re.findall(r'\d+', str_val)
+        if numbers:
+            try:
+                return int(numbers[0])
+            except ValueError:
+                return 10
+        
+        return 10
     
     def _find_best_column(self, preferred_names: List[str]) -> Optional[str]:
         """Trova la migliore colonna corrispondente dai nomi preferiti"""
@@ -452,19 +516,28 @@ class StartupDataProcessor:
         }
     
     def search_startups(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Cerca startup in base a una query"""
+        """Cerca startup in base a una query (ottimizzata per evitare duplicati)"""
         if self.df is None:
             return []
         
+        query_lower = query.lower().strip()
+        
         # Cerca in nome, settore, descrizione e founders
         mask = (
-            self.df['nome'].str.contains(query, case=False, na=False) |
-            self.df['settore'].str.contains(query, case=False, na=False) |
-            self.df['descrizione'].str.contains(query, case=False, na=False) |
-            self.df['founders'].str.contains(query, case=False, na=False)
+            self.df['nome'].str.contains(query_lower, case=False, na=False) |
+            self.df['settore'].str.contains(query_lower, case=False, na=False) |
+            self.df['descrizione'].str.contains(query_lower, case=False, na=False) |
+            self.df['founders'].str.contains(query_lower, case=False, na=False)
         )
         
-        filtered_df = self.df[mask].head(limit)
+        filtered_df = self.df[mask]
+        
+        # Rimuovi duplicati basandosi su nome + settore + location
+        filtered_df = filtered_df.drop_duplicates(subset=['nome', 'settore', 'location'])
+        
+        # Ordina per finanziamenti (più alti prima) e limita i risultati
+        filtered_df = filtered_df.sort_values('finanziamenti', ascending=False).head(limit)
+        
         return self.get_startup_data_from_df(filtered_df)
     
     def get_startup_data_from_df(self, df_subset) -> List[Dict[str, Any]]:
@@ -472,7 +545,7 @@ class StartupDataProcessor:
         startups = []
         for idx, row in df_subset.iterrows():
             startup = {
-                "id": f"startup_{idx}",
+                "id": str(row.get('startup_id', f"startup_{idx}")),
                 "name": str(row.get('nome', 'Unknown')),
                 "sector": str(row.get('settore', 'Technology')),
                 "funding": float(row.get('finanziamenti', 0)),
@@ -484,7 +557,10 @@ class StartupDataProcessor:
                 "pipeline": str(row.get('pipeline', 'Unknown')),
                 "founders": str(row.get('founders', 'Unknown')),
                 "social_links": row.get('social_links', {}),
-                "funding_formatted": self._format_funding(row.get('finanziamenti', 0))
+                "funding_formatted": self._format_funding(row.get('finanziamenti', 0)),
+                "description_short": str(row.get('descrizione', 'Startup innovativa'))[:200].replace('\n', ' ').strip() + ('...' if len(str(row.get('descrizione', ''))) > 200 else ''),
+                "has_website": bool(row.get('social_links', {}).get('website', False)),
+                "has_linkedin": bool(row.get('social_links', {}).get('linkedin', False))
             }
             startups.append(startup)
         
